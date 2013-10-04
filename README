@@ -1,0 +1,115 @@
+NAME
+    Devel::Confess - Warns and dies noisily with stack backtraces
+
+SYNOPSIS
+      use Devel::Confess;
+
+    makes every "warn()" and "die()" complains loudly in the calling package
+    and elsewhere. Works even when exception objects are thrown. More often
+    used on the command line:
+
+      perl -MDevel::Confess script.pl
+
+    or as shorthand:
+
+      perl -d:Confess script.pl
+
+DESCRIPTION
+    This module is meant as a debugging aid. It can be used to make a script
+    complain loudly with stack backtraces when warn()ing or die()ing. Unlike
+    other similar modules (e.g. Carp::Always), it includes stack traces even
+    when exception objects are thrown.
+
+    Here are how stack backtraces produced by this module looks:
+
+      # it works for explicit die's and warn's
+      $ perl -MDevel::Confess -e 'sub f { die "arghh" }; sub g { f }; g'
+      arghh at -e line 1.
+              main::f() called at -e line 1
+              main::g() called at -e line 1
+
+      # it works for interpreter-thrown failures
+      $ perl -MDevel::Confess -w -e 'sub f { $a = shift; @a = @$a };' \
+                                            -e 'sub g { f(undef) }; g'
+      Use of uninitialized value in array dereference at -e line 1.
+              main::f('undef') called at -e line 2
+              main::g() called at -e line 2
+
+    In the implementation, the "Carp" module does the heavy work, through
+    "longmess()". The actual implementation sets the signal hooks
+    $SIG{__WARN__} and $SIG{__DIE__} to emit the stack backtraces.
+
+    Oh, by the way, "carp" and "croak" when requiring/using the "Carp"
+    module are also made verbose, behaving like "cluck" and "confess",
+    respectively.
+
+    Stack traces are also included if raw non-object references are thrown.
+
+METHODS
+  import( @options )
+    Enables stack traces and sets options. Options can be prefixed with no_
+    to disable them.
+
+    "objects"
+        Enable attaching stack traces to exception objects. Defaults to on.
+
+    "hacks"
+        Load the Devel::Confess::Hacks module to use built in stack traces
+        on supported exception types.
+
+CONFIGURATION
+  %Devel::Confess::NoTrace
+    Classes or roles added to this hash will not have stack traces attached
+    to them. This is useful for exception classes that provide their own
+    stack traces, or classes that don't cope well with being re-blessed. If
+    Devel::Confess::Hacks is loaded, it will automatically add its supported
+    exception types to this hash.
+
+    Default Entries:
+
+    Throwable::Error
+        Provides a stack trace
+
+    Moose::Error::Default
+        Provides a stack trace
+
+ACKNOWLEDGMENTS
+    The idea, part of the code, and most of the documentation are taken from
+    Carp::Always.
+
+SEE ALSO
+    *   Carp::Always
+
+    *   Carp
+
+    *   Acme::JavaTrace and Devel::SimpleTrace
+
+    *   Carp::Always::Color
+
+    *   Carp::Source::Always
+
+    Please report bugs via CPAN RT
+    http://rt.cpan.org/NoAuth/Bugs.html?Dist=Devel-Confess.
+
+BUGS
+    This module uses several ugly tricks to do its work and surely has bugs.
+
+    *   This module does not play well with other modules which fusses
+        around with "warn", "die", $SIG{'__WARN__'}, $SIG{'__DIE__'}.
+
+AUTHORS
+    *   Graham Knop, <haarg@haarg.org>
+
+    *   Adriano Ferreira, <ferreira@cpan.org>
+
+CONTRIBUTORS
+    None yet.
+
+COPYRIGHT
+    Copyright (c) 2005-2013 the "AUTHORS" and "CONTRIBUTORS" as listed
+    above.
+
+LICENSE
+    This library is free software and may be distributed under the same
+    terms as perl itself. See <http://dev.perl.org/licenses/>.
+
