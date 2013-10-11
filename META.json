@@ -42,7 +42,7 @@
          }
       }
    },
-   "release_status" : "stable",
+   "release_status" : "testing",
    "resources" : {
       "bugtracker" : {
          "mailto" : "bug-Devel-Confess@rt.cpan.org",
@@ -57,5 +57,5 @@
          "web" : "https://github.com/haarg/Devel-Confess"
       }
    },
-   "version" : "0.003001"
+   "version" : "0.004000_01"
 }

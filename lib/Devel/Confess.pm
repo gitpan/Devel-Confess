@@ -3,51 +3,34 @@ use 5.006;
 use strict;
 use warnings FATAL => 'all';
 
-our $VERSION = '0.003001';
+our $VERSION = '0.004000_01';
 $VERSION = eval $VERSION;
 
 use Carp ();
 use overload ();
-use Scalar::Util qw(blessed refaddr);
 use Symbol ();
-BEGIN {
-  # fake weaken if it isn't available.  will cause leaks, but this
-  # is a brute force debugging tool, so we can deal with it.
-  *weaken = defined &Scalar::Util::weaken
-    ? \&Scalar::Util::weaken : sub ($) { 0 };
-}
-BEGIN {
-  *_CARP_DOT = $Carp::VERSION && $Carp::VERSION >= 1.25 ? sub () {1} : sub () {0};
-  if ($Carp::VERSION) {
-    $Carp::Internal{+__PACKAGE__}++;
-    *_longmess = \&Carp::longmess;
-  }
-  else {
-    *_longmess = sub {
-      my $level = 0;
-      $level++ while ((caller($level))[0] =~ /^Carp(?:::|$)/);
-      local $Carp::CarpLevel = $Carp::CarpLevel + $level;
-      &Carp::longmess;
-    }
-  }
-}
+use Devel::Confess::_Util qw(blessed refaddr weaken longmess);
+
+$Carp::Internal{'Devel::Confess'}++;
 
 our %NoTrace;
 $NoTrace{'Throwable::Error'}++;
 $NoTrace{'Moose::Error::Default'}++;
 
 my %OLD_SIG;
-my $old_verbose;
 
 my %options = (
   objects => 1,
-  hacks => 1,
+  hacks => undef,
+  dump => 0,
+  source => 0,
+  color => 0,
 );
 
 sub import {
   my $class = shift;
 
-  my @opts = map { /^-?(no_)?(.*)/; [ $_, $2, !$1 ] } @_;
+  my @opts = map { /^-?(no_)?(.*)/; [ $_, $2, $1 ? 0 : 1 ] } @_;
   if (my @bad = grep { !exists $options{$_->[1]} } @opts) {
     Carp::croak "invalid options: " . join(', ', map { $_->[0] } @bad);
   }
@@ -55,10 +38,13 @@ sub import {
   $options{$_->[1]} = $_->[2]
     for @opts;
 
-  if (exists $options{hacks}) {
+  if (defined $options{hacks}) {
     require Devel::Confess::Hacks;
     my $do = $options{hacks} ? 'import' : 'unimport';
     Devel::Confess::Hacks->$do;
+  }
+  if ($options{source}) {
+    require Carp::Source;
   }
 
   return
@@ -67,9 +53,6 @@ sub import {
   @OLD_SIG{qw(__DIE__ __WARN__)} = @SIG{qw(__DIE__ __WARN__)};
   $SIG{__DIE__} = \&_die;
   $SIG{__WARN__} = \&_warn;
-
-  $old_verbose = $Carp::Verbose;
-  $Carp::Verbose = 1;
 }
 
 sub _find_sig {
@@ -98,8 +81,6 @@ sub unimport {
       delete $SIG{$_};
     }
   }
-
-  $Carp::Verbose = $old_verbose;
 }
 END {
   __PACKAGE__->unimport;
@@ -111,6 +92,7 @@ sub _warn {
     $warn->(@convert);
   }
   else {
+    _colorize(\@convert, 33) if $options{color};
     warn @convert;
   }
 }
@@ -120,8 +102,61 @@ sub _die {
     $sig->(@convert);
   }
   else {
+    _colorize(\@convert, 31) if $options{color};
     die @convert;
   }
+}
+
+sub _colorize {
+  my ($convert, $color) = @_;
+  if (!$^S && ($ENV{DEVEL_CONFESS_COLOR} || -t *STDERR )) {
+    if (blessed $convert->[0]) {
+      if ($convert->[0]->isa('Devel::Confess::_Attached')) {
+        splice @$convert, 0, 1, $convert->[0]->__ex_as_string;
+      }
+      else {
+        $convert->[0] =~ s/(.*)/\e[${color}m$1\e[m/;
+        return;
+      }
+    }
+    $convert->[0] = "\e[${color}m$convert->[0]\e[m";
+  }
+}
+
+sub _ref_formatter {
+  require Data::Dumper;
+  local $SIG{__WARN__} = sub {};
+  local $SIG{__DIE__} = sub {};
+  no warnings 'once';
+  local $Data::Dumper::Indent = 0;
+  local $Data::Dumper::Purity = 0;
+  local $Data::Dumper::Terse = 1;
+  Data::Dumper::Dumper($_[0]);
+}
+
+sub _stack_trace {
+  no warnings 'once';
+  local $Carp::RefArgFormatter = \&_ref_formatter
+    if $options{dump};
+  my $message = &longmess;
+  $message =~ s/\.?$/./m;
+  if ($options{source}) {
+    require SelectSaver;
+    my $source = '';
+    open my $fh, '>', \$source;
+    my $s = SelectSaver->new($fh);
+    my $level = 1;
+    while(1) {
+      my $p = (caller($level))[0];
+      last
+        unless $Carp::Internal{$p} || $Carp::CarpInternal{$p}
+          || $p =~ /^Carp(?:::|$)|^Devel::Confess/;
+      $level++;
+    }
+    my $x = Carp::Source::ret_backtrace($level-1, '');
+    $message .= $source;
+  }
+  $message;
 }
 
 my $pack_suffix = 'A000';
@@ -152,8 +187,7 @@ sub _convert {
       return @_;
     }
 
-    my $message = _longmess();
-    $message =~ s/\.?$/./m;
+    my $message = _stack_trace();
 
     $attached{$id} = [ $ex, $class, $message ];
     weaken $attached{$id}[0];
@@ -171,46 +205,29 @@ sub _convert {
   elsif (ref(my $ex = $_[0])) {
     my $id = refaddr($ex);
     my $info = $attached{$id} ||= do {
-      my $message = _longmess();
-      $message =~ s/\.?$/./m;
+      my $message = _stack_trace;
       my $info = [ $_[0], undef, $message ];
       weaken $info->[0];
       $info;
     };
 
-    return($^S ? @_ : join('', @_, $info->[2]));
+    return ($^S ? @_ : ( @_, $info->[2] ));
   }
   elsif ((caller(1))[0] eq 'Carp') {
-    if (_CARP_DOT) {
-      return @_;
-    }
-    else {
-      my $message = _longmess();
-      my $out = join('', @_);
-      if ($out =~ s/\Q$message\E\z//) {
-        $message =~ s/\.?$/./m;
-      }
-      else {
-        $message =~ s/^(.*\n)//;
-        my $where = $1;
-        $where =~ s/\.?$/./m;
-        $out =~ s/(?:\Q$message\E)?\z//
-          if length $message;
-        $out .= $where;
-      }
-      $out .= $message;
-      return $out;
-    }
+    my $out = join('', @_);
+
+    my $long = longmess();
+    $out =~ s/(.*)(?:\Q$long\E| at .*? line .*?\n)\z/$1/;
+
+    return ($out, _stack_trace());
   }
   else {
-    my $message = _longmess();
+    my $message = _stack_trace();
     $message =~ s/^(.*\n)//;
     my $where = $1;
-    $where =~ s/\.?$/./m;
     my $out = join('', @_);
-    $out =~ s/(?:\Q$where\E)?\z//;
-    $out .= $where . $message;
-    return $out;
+    $out =~ s/\Q$where\E\z//;
+    return ($out, $where . $message);
   }
 }
 
@@ -251,6 +268,15 @@ my $_delete_ex_info = sub {
       return $out;
     },
   ;
+
+  sub __ex_as_strings {
+    my ($ex, $class, $message) = $_ex_info->(@_);
+    my $newclass = ref $ex;
+    bless $ex, $class;
+    my $out = "$ex";
+    bless $ex, $newclass;
+    return ($out, $message);
+  }
 
   sub DESTROY {
     my ($ex, $class) = $_delete_ex_info->(@_);
@@ -339,12 +365,26 @@ with no_ to disable them.
 
 =item C<objects>
 
-Enable attaching stack traces to exception objects.  Defaults to on.
+Enable attaching stack traces to exception objects.  Enabled by default.
 
 =item C<hacks>
 
 Load the L<Devel::Confess::Hacks> module to use built in
-stack traces on supported exception types.
+stack traces on supported exception types.  Disabled by default.
+
+=item C<dump>
+
+Dumps the contents of references in arguments in stack trace, instead
+of only showing their stringified version.  Disabled by default.
+
+=item C<color>
+
+Colorizes error messages in red and warnings in yellow.  Disabled by default.
+
+=item C<source>
+
+Includes a snippet of the source for each level of the stack trace.
+Requires the L<Carp::Source> module.  Disabled by default.
 
 =back
 
@@ -400,6 +440,10 @@ L<Carp::Always::Color>
 =item *
 
 L<Carp::Source::Always>
+
+=item *
+
+L<Carp::Always::Dump>
 
 =back
 

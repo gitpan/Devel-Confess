@@ -51,11 +51,25 @@ METHODS
     to disable them.
 
     "objects"
-        Enable attaching stack traces to exception objects. Defaults to on.
+        Enable attaching stack traces to exception objects. Enabled by
+        default.
 
     "hacks"
         Load the Devel::Confess::Hacks module to use built in stack traces
-        on supported exception types.
+        on supported exception types. Disabled by default.
+
+    "dump"
+        Dumps the contents of references in arguments in stack trace,
+        instead of only showing their stringified version. Disabled by
+        default.
+
+    "color"
+        Colorizes error messages in red and warnings in yellow. Disabled by
+        default.
+
+    "source"
+        Includes a snippet of the source for each level of the stack trace.
+        Requires the Carp::Source module. Disabled by default.
 
 CONFIGURATION
   %Devel::Confess::NoTrace
@@ -87,6 +101,8 @@ SEE ALSO
     *   Carp::Always::Color
 
     *   Carp::Source::Always
+
+    *   Carp::Always::Dump
 
     Please report bugs via CPAN RT
     http://rt.cpan.org/NoAuth/Bugs.html?Dist=Devel-Confess.
