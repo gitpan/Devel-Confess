@@ -3,52 +3,65 @@ use 5.006;
 use strict;
 use warnings FATAL => 'all';
 
-our $VERSION = '0.004000_01';
+our $VERSION = '0.004000_02';
 $VERSION = eval $VERSION;
 
 use Carp ();
-use overload ();
 use Symbol ();
 use Devel::Confess::_Util qw(blessed refaddr weaken longmess);
 
-$Carp::Internal{'Devel::Confess'}++;
+# detect -d:Confess.  disable debugger features for now.  we'll
+# enable them when we need them.
+if (!defined &DB::DB && $^P & 0x02) {
+  $^P = 0;
+}
+
+$Carp::Internal{+__PACKAGE__}++;
 
 our %NoTrace;
 $NoTrace{'Throwable::Error'}++;
 $NoTrace{'Moose::Error::Default'}++;
 
-my %OLD_SIG;
+our %OPTIONS;
 
-my %options = (
-  objects => 1,
-  hacks => undef,
-  dump => 0,
-  source => 0,
-  color => 0,
-);
+sub _parse_options {
+  my @opts = map { /^-?(no[_-])?(.*)/; [ $_, $2, $1 ? 0 : 1 ] } @_;
+  if (!keys %OPTIONS) {
+    %OPTIONS = (
+      objects => 1,
+      builtin => undef,
+      dump => 0,
+      color => 0,
+    );
+    local $@;
+    eval { _parse_options(split ' ', $ENV{DEVEL_CONFESS_OPTIONS}||''); 1 }
+      or warn $@;
+  }
+  if (my @bad = grep { !exists $OPTIONS{$_->[1]} } @opts) {
+    Carp::croak "invalid options: " . join(', ', map { $_->[0] } @bad);
+  }
+  $OPTIONS{$_->[1]} = $_->[2]
+    for @opts;
+}
+
+my %OLD_SIG;
 
 sub import {
   my $class = shift;
 
-  my @opts = map { /^-?(no_)?(.*)/; [ $_, $2, $1 ? 0 : 1 ] } @_;
-  if (my @bad = grep { !exists $options{$_->[1]} } @opts) {
-    Carp::croak "invalid options: " . join(', ', map { $_->[0] } @bad);
-  }
+  _parse_options(@_);
 
-  $options{$_->[1]} = $_->[2]
-    for @opts;
-
-  if (defined $options{hacks}) {
-    require Devel::Confess::Hacks;
-    my $do = $options{hacks} ? 'import' : 'unimport';
-    Devel::Confess::Hacks->$do;
-  }
-  if ($options{source}) {
-    require Carp::Source;
+  if (defined $OPTIONS{builtin}) {
+    require Devel::Confess::Builtin;
+    my $do = $OPTIONS{builtin} ? 'import' : 'unimport';
+    Devel::Confess::Builtin->$do;
   }
 
   return
     if keys %OLD_SIG;
+
+  # enable better names for evals and anon subs
+  $^P |= 0x100 | 0x200;
 
   @OLD_SIG{qw(__DIE__ __WARN__)} = @SIG{qw(__DIE__ __WARN__)};
   $SIG{__DIE__} = \&_die;
@@ -92,7 +105,7 @@ sub _warn {
     $warn->(@convert);
   }
   else {
-    _colorize(\@convert, 33) if $options{color};
+    _colorize(\@convert, 33) if $OPTIONS{color};
     warn @convert;
   }
 }
@@ -102,17 +115,17 @@ sub _die {
     $sig->(@convert);
   }
   else {
-    _colorize(\@convert, 31) if $options{color};
+    _colorize(\@convert, 31) if $OPTIONS{color} && !$^S;
     die @convert;
   }
 }
 
 sub _colorize {
   my ($convert, $color) = @_;
-  if (!$^S && ($ENV{DEVEL_CONFESS_COLOR} || -t *STDERR )) {
+  if ($ENV{DEVEL_CONFESS_FORCE_COLOR} || -t *STDERR) {
     if (blessed $convert->[0]) {
       if ($convert->[0]->isa('Devel::Confess::_Attached')) {
-        splice @$convert, 0, 1, $convert->[0]->__ex_as_string;
+        splice @$convert, 0, 1, _ex_as_strings($convert->[0]);
       }
       else {
         $convert->[0] =~ s/(.*)/\e[${color}m$1\e[m/;
@@ -137,25 +150,9 @@ sub _ref_formatter {
 sub _stack_trace {
   no warnings 'once';
   local $Carp::RefArgFormatter = \&_ref_formatter
-    if $options{dump};
+    if $OPTIONS{dump};
   my $message = &longmess;
   $message =~ s/\.?$/./m;
-  if ($options{source}) {
-    require SelectSaver;
-    my $source = '';
-    open my $fh, '>', \$source;
-    my $s = SelectSaver->new($fh);
-    my $level = 1;
-    while(1) {
-      my $p = (caller($level))[0];
-      last
-        unless $Carp::Internal{$p} || $Carp::CarpInternal{$p}
-          || $p =~ /^Carp(?:::|$)|^Devel::Confess/;
-      $level++;
-    }
-    my $x = Carp::Source::ret_backtrace($level-1, '');
-    $message .= $source;
-  }
   $message;
 }
 
@@ -168,10 +165,9 @@ sub CLONE {
 
 sub _convert {
   __PACKAGE__->CLONE;
-  if (my $class = blessed $_[0]) {
+  if (my $class = blessed(my $ex = $_[0])) {
     return @_
-      unless $options{objects};
-    my $ex = $_[0];
+      unless $OPTIONS{objects};
     my $id = refaddr($ex);
     return @_
       if $attached{$id};
@@ -202,7 +198,7 @@ sub _convert {
     bless $ex, $newclass;
     $ex;
   }
-  elsif (ref(my $ex = $_[0])) {
+  elsif (ref($ex = $_[0])) {
     my $id = refaddr($ex);
     my $info = $attached{$id} ||= do {
       my $message = _stack_trace;
@@ -231,12 +227,20 @@ sub _convert {
   }
 }
 
-my $_ex_info = sub {
+sub _ex_info {
   @{$attached{refaddr $_[0]}};
-};
-my $_delete_ex_info = sub {
+}
+sub _delete_ex_info {
   @{ delete $attached{refaddr $_[0]} };
-};
+}
+sub _ex_as_strings {
+  my ($ex, $class, $message) = _ex_info(@_);
+  my $newclass = ref $ex;
+  bless $ex, $class;
+  my $out = "$ex";
+  bless $ex, $newclass;
+  return ($out, $message);
+}
 
 {
   package #hide
@@ -244,7 +248,7 @@ my $_delete_ex_info = sub {
   use overload
     fallback => 1,
     'bool' => sub {
-      my ($ex, $class) = $_ex_info->(@_);
+      my ($ex, $class) = Devel::Confess::_ex_info(@_);
       my $newclass = ref $ex;
       bless $ex, $class;
       my $out = !!$ex;
@@ -252,7 +256,7 @@ my $_delete_ex_info = sub {
       return $out;
     },
     '0+' => sub {
-      my ($ex, $class) = $_ex_info->(@_);
+      my ($ex, $class) = Devel::Confess::_ex_info(@_);
       my $newclass = ref $ex;
       bless $ex, $class;
       my $out = 0+sprintf '%f', $ex;
@@ -260,26 +264,12 @@ my $_delete_ex_info = sub {
       return $out;
     },
     '""' => sub {
-      my ($ex, $class, $message) = $_ex_info->(@_);
-      my $newclass = ref $ex;
-      bless $ex, $class;
-      my $out = "$ex" . $message;
-      bless $ex, $newclass;
-      return $out;
+      return join('', Devel::Confess::_ex_as_strings(@_));
     },
   ;
 
-  sub __ex_as_strings {
-    my ($ex, $class, $message) = $_ex_info->(@_);
-    my $newclass = ref $ex;
-    bless $ex, $class;
-    my $out = "$ex";
-    bless $ex, $newclass;
-    return ($out, $message);
-  }
-
   sub DESTROY {
-    my ($ex, $class) = $_delete_ex_info->(@_);
+    my ($ex, $class) = Devel::Confess::_delete_ex_info(@_);
     my $newclass = ref $ex;
 
     Symbol::delete_package($newclass);
@@ -289,11 +279,6 @@ my $_delete_ex_info = sub {
     # after reblessing, perl will re-dispatch to the class's own DESTROY.
     ();
   }
-}
-
-# allow -d:Confess
-if (!defined &DB::DB) {
-  *DB::DB = sub {};
 }
 
 1;
@@ -367,9 +352,9 @@ with no_ to disable them.
 
 Enable attaching stack traces to exception objects.  Enabled by default.
 
-=item C<hacks>
+=item C<builtin>
 
-Load the L<Devel::Confess::Hacks> module to use built in
+Load the L<Devel::Confess::Builtin> module to use built in
 stack traces on supported exception types.  Disabled by default.
 
 =item C<dump>
@@ -381,11 +366,6 @@ of only showing their stringified version.  Disabled by default.
 
 Colorizes error messages in red and warnings in yellow.  Disabled by default.
 
-=item C<source>
-
-Includes a snippet of the source for each level of the stack trace.
-Requires the L<Carp::Source> module.  Disabled by default.
-
 =back
 
 =head1 CONFIGURATION
@@ -395,7 +375,7 @@ Requires the L<Carp::Source> module.  Disabled by default.
 Classes or roles added to this hash will not have stack traces
 attached to them.  This is useful for exception classes that provide
 their own stack traces, or classes that don't cope well with being
-re-blessed.  If L<Devel::Confess::Hacks> is loaded, it will
+re-blessed.  If L<Devel::Confess::Buildin> is loaded, it will
 automatically add its supported exception types to this hash.
 
 Default Entries:

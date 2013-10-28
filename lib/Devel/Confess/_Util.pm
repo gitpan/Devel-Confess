@@ -17,14 +17,28 @@ use Scalar::Util qw(blessed refaddr);
   ? \&Scalar::Util::weaken
   : sub ($) { 0 };
 
-*longmess = $Carp::VERSION ? \&Carp::longmess : sub {
-  my $level = 0;
-  $level++ while ((caller($level))[0] =~ /^Carp(?:::|$)|^Devel::Confess/);
-  local $Carp::CarpLevel = $Carp::CarpLevel + $level;
-  &Carp::longmess;
+*longmess = $Carp::VERSION ? \&Carp::longmess : eval q{
+  package
+    Carp;
+  our (%CarpInternal, %Internal, $CarpLevel);
+  $CarpInternal{Carp}++;
+  $CarpInternal{warnings}++;
+  $Internal{Exporter}++;
+  $Internal{'Exporter::Heavy'}++;
+  sub {
+    my $level = 0;
+    while (1) {
+      my $p = (caller($level))[0] || last;
+      last
+        unless $CarpInternal{$p} || $Internal{$p};
+      $level++;
+    }
+    local $CarpLevel = $CarpLevel + $level;
+    &longmess;
+  };
 };
 
-if ($Carp::VERSION && $Carp::VERSION < 1.32) {
+if (defined &Carp::format_arg && $Carp::VERSION < 1.32) {
   my $format_arg = \&Carp::format_arg;
   eval q{
     package
@@ -46,8 +60,8 @@ if ($Carp::VERSION && $Carp::VERSION < 1.32) {
         }
         elsif (
           ref $_[0]
-          && our $RefArgFormatter
-          && eval { $arg = $RefArgFormatter->(@_); 1 }
+          and our $RefArgFormatter
+          and eval { $arg = $RefArgFormatter->(@_); 1 }
         ) {
           return $arg;
         }

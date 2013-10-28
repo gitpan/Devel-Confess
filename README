@@ -54,8 +54,8 @@ METHODS
         Enable attaching stack traces to exception objects. Enabled by
         default.
 
-    "hacks"
-        Load the Devel::Confess::Hacks module to use built in stack traces
+    "builtin"
+        Load the Devel::Confess::Builtin module to use built in stack traces
         on supported exception types. Disabled by default.
 
     "dump"
@@ -67,17 +67,13 @@ METHODS
         Colorizes error messages in red and warnings in yellow. Disabled by
         default.
 
-    "source"
-        Includes a snippet of the source for each level of the stack trace.
-        Requires the Carp::Source module. Disabled by default.
-
 CONFIGURATION
   %Devel::Confess::NoTrace
     Classes or roles added to this hash will not have stack traces attached
     to them. This is useful for exception classes that provide their own
     stack traces, or classes that don't cope well with being re-blessed. If
-    Devel::Confess::Hacks is loaded, it will automatically add its supported
-    exception types to this hash.
+    Devel::Confess::Buildin is loaded, it will automatically add its
+    supported exception types to this hash.
 
     Default Entries:
 

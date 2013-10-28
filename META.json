@@ -4,7 +4,7 @@
       "haarg - Graham Knop (cpan:HAARG) <haarg@haarg.org>"
    ],
    "dynamic_config" : 0,
-   "generated_by" : "ExtUtils::MakeMaker version 6.76, CPAN::Meta::Converter version 2.120921",
+   "generated_by" : "ExtUtils::MakeMaker version 6.8, CPAN::Meta::Converter version 2.132830",
    "license" : [
       "perl_5"
    ],
@@ -57,5 +57,5 @@
          "web" : "https://github.com/haarg/Devel-Confess"
       }
    },
-   "version" : "0.004000_01"
+   "version" : "0.004000_02"
 }
