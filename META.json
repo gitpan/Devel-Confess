@@ -28,6 +28,14 @@
             "ExtUtils::MakeMaker" : "0"
          }
       },
+      "develop" : {
+         "requires" : {
+            "Class::Throwable" : "0",
+            "Exception::Base" : "0",
+            "Exception::Class" : "0",
+            "Ouch" : "0"
+         }
+      },
       "runtime" : {
          "requires" : {
             "Carp" : "0",
@@ -42,7 +50,7 @@
          }
       }
    },
-   "release_status" : "testing",
+   "release_status" : "stable",
    "resources" : {
       "bugtracker" : {
          "mailto" : "bug-Devel-Confess@rt.cpan.org",
@@ -57,5 +65,5 @@
          "web" : "https://github.com/haarg/Devel-Confess"
       }
    },
-   "version" : "0.004000_02"
+   "version" : "0.004000"
 }

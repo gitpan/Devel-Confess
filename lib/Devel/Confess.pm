@@ -3,7 +3,7 @@ use 5.006;
 use strict;
 use warnings FATAL => 'all';
 
-our $VERSION = '0.004000_02';
+our $VERSION = '0.004000';
 $VERSION = eval $VERSION;
 
 use Carp ();
@@ -12,7 +12,9 @@ use Devel::Confess::_Util qw(blessed refaddr weaken longmess);
 
 # detect -d:Confess.  disable debugger features for now.  we'll
 # enable them when we need them.
+my $loaded_as_debug;
 if (!defined &DB::DB && $^P & 0x02) {
+  $loaded_as_debug = 1;
   $^P = 0;
 }
 
@@ -61,7 +63,8 @@ sub import {
     if keys %OLD_SIG;
 
   # enable better names for evals and anon subs
-  $^P |= 0x100 | 0x200;
+  $^P |= 0x100 | 0x200
+    unless $] < 5.8 && !$loaded_as_debug;
 
   @OLD_SIG{qw(__DIE__ __WARN__)} = @SIG{qw(__DIE__ __WARN__)};
   $SIG{__DIE__} = \&_die;
@@ -114,10 +117,8 @@ sub _die {
   if (my $sig = _find_sig($OLD_SIG{__DIE__})) {
     $sig->(@convert);
   }
-  else {
-    _colorize(\@convert, 31) if $OPTIONS{color} && !$^S;
-    die @convert;
-  }
+  _colorize(\@convert, 31) if $OPTIONS{color} && !$^S;
+  die @convert;
 }
 
 sub _colorize {
@@ -213,7 +214,10 @@ sub _convert {
     my $out = join('', @_);
 
     my $long = longmess();
-    $out =~ s/(.*)(?:\Q$long\E| at .*? line .*?\n)\z/$1/;
+    my $long_trail = $long;
+    $long_trail =~ s/.*?\n//;
+    $out =~ s/\Q$long\E\z|\Q$long_trail\E\z//
+      or $out =~ s/(.*) at .*? line .*?\n\z/$1/;
 
     return ($out, _stack_trace());
   }

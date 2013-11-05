@@ -12,6 +12,7 @@ t/dump.t
 t/leak.t
 t/lib/capture.pm
 t/sig.t
+xt/builtin.t
 META.yml                                 Module YAML meta-data (added by MakeMaker)
 META.json                                Module JSON meta-data (added by MakeMaker)
 README                                   README file (added by Distar)
