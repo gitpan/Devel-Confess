@@ -67,6 +67,14 @@ METHODS
         Colorizes error messages in red and warnings in yellow. Disabled by
         default.
 
+    "source"
+        Includes a snippet of the source for each level of the stack trace.
+        Disabled by default.
+
+    The default options can be changed by setting the
+    "DEVEL_CONFESS_OPTIONS" environment variable to a space separated list
+    of options.
+
 CONFIGURATION
   %Devel::Confess::NoTrace
     Classes or roles added to this hash will not have stack traces attached

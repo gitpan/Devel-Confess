@@ -3,7 +3,7 @@ use 5.006;
 use strict;
 use warnings FATAL => 'all';
 
-our $VERSION = '0.004000';
+our $VERSION = '0.005000';
 $VERSION = eval $VERSION;
 
 use Carp ();
@@ -34,6 +34,7 @@ sub _parse_options {
       builtin => undef,
       dump => 0,
       color => 0,
+      source => 0,
     );
     local $@;
     eval { _parse_options(split ' ', $ENV{DEVEL_CONFESS_OPTIONS}||''); 1 }
@@ -57,6 +58,9 @@ sub import {
     require Devel::Confess::Builtin;
     my $do = $OPTIONS{builtin} ? 'import' : 'unimport';
     Devel::Confess::Builtin->$do;
+  }
+  if ($OPTIONS{source}) {
+    require Devel::Confess::Source;
   }
 
   return
@@ -154,6 +158,9 @@ sub _stack_trace {
     if $OPTIONS{dump};
   my $message = &longmess;
   $message =~ s/\.?$/./m;
+  if ($OPTIONS{source}) {
+    $message .= Devel::Confess::Source::source_trace(1);
+  }
   $message;
 }
 
@@ -370,7 +377,15 @@ of only showing their stringified version.  Disabled by default.
 
 Colorizes error messages in red and warnings in yellow.  Disabled by default.
 
+=item C<source>
+
+Includes a snippet of the source for each level of the stack trace. Disabled
+by default.
+
 =back
+
+The default options can be changed by setting the C<DEVEL_CONFESS_OPTIONS>
+environment variable to a space separated list of options.
 
 =head1 CONFIGURATION
 
