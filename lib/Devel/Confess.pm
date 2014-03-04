@@ -3,19 +3,22 @@ use 5.006;
 use strict;
 use warnings FATAL => 'all';
 
-our $VERSION = '0.005000';
+our $VERSION = '0.006000';
 $VERSION = eval $VERSION;
 
 use Carp ();
 use Symbol ();
 use Devel::Confess::_Util qw(blessed refaddr weaken longmess);
 
-# detect -d:Confess.  disable debugger features for now.  we'll
-# enable them when we need them.
-my $loaded_as_debug;
-if (!defined &DB::DB && $^P & 0x02) {
-  $loaded_as_debug = 1;
-  $^P = 0;
+BEGIN {
+  my $can_use_informative_names = $] >= 5.8;
+  # detect -d:Confess.  disable debugger features for now.  we'll
+  # enable them when we need them.
+  if (!defined &DB::DB && $^P & 0x02) {
+    $can_use_informative_names = 1;
+    $^P = 0;
+  }
+  *_CAN_USE_INFORMATIVE_NAMES = sub () { $can_use_informative_names };
 }
 
 $Carp::Internal{+__PACKAGE__}++;
@@ -30,21 +33,28 @@ sub _parse_options {
   my @opts = map { /^-?(no[_-])?(.*)/; [ $_, $2, $1 ? 0 : 1 ] } @_;
   if (!keys %OPTIONS) {
     %OPTIONS = (
-      objects => 1,
-      builtin => undef,
-      dump => 0,
-      color => 0,
-      source => 0,
+      objects   => 1,
+      builtin   => undef,
+      dump      => 0,
+      color     => 0,
+      source    => 0,
+      errors    => 1,
+      warnings  => 1,
+      better_names => 1,
     );
     local $@;
-    eval { _parse_options(split ' ', $ENV{DEVEL_CONFESS_OPTIONS}||''); 1 }
-      or warn $@;
+    eval {
+      _parse_options(
+        grep length, split /[\s,]+/, $ENV{DEVEL_CONFESS_OPTIONS}||''
+      );
+    } or warn $@;
   }
   if (my @bad = grep { !exists $OPTIONS{$_->[1]} } @opts) {
-    Carp::croak "invalid options: " . join(', ', map { $_->[0] } @bad);
+    Carp::croak("invalid options: " . join(', ', map { $_->[0] } @bad));
   }
   $OPTIONS{$_->[1]} = $_->[2]
     for @opts;
+  1;
 }
 
 my %OLD_SIG;
@@ -62,31 +72,28 @@ sub import {
   if ($OPTIONS{source}) {
     require Devel::Confess::Source;
   }
+  if ($OPTIONS{color} && $^O eq 'MSWin32') {
+    if (eval { require Win32::Console::ANSI }) {
+      Win32::Console::ANSI->import;
+    }
+    else {
+      Carp::carp("Devel::Confess color option requires Win32::Console::ANSI on Windows");
+      $OPTIONS{color} = 0;
+    }
+  }
 
-  return
-    if keys %OLD_SIG;
+  if ($OPTIONS{errors} && !$OLD_SIG{__DIE__}) {
+    $OLD_SIG{__DIE__} = $SIG{__DIE__};
+    $SIG{__DIE__} = \&_die;
+  }
+  if ($OPTIONS{warnings} && !$OLD_SIG{__WARN__}) {
+    $OLD_SIG{__WARN__} = $SIG{__WARN__};
+    $SIG{__WARN__} = \&_warn;
+  }
 
   # enable better names for evals and anon subs
   $^P |= 0x100 | 0x200
-    unless $] < 5.8 && !$loaded_as_debug;
-
-  @OLD_SIG{qw(__DIE__ __WARN__)} = @SIG{qw(__DIE__ __WARN__)};
-  $SIG{__DIE__} = \&_die;
-  $SIG{__WARN__} = \&_warn;
-}
-
-sub _find_sig {
-  my $sig = $_[0];
-  return undef
-    if !defined $sig;
-  return $sig
-    if ref $sig && eval { \&{$sig} };
-  return undef
-    if $sig eq 'DEFAULT' || $sig eq 'IGNORE';
-  package #hide
-    main;
-  no strict 'refs';
-  defined &{$sig} ? \&{$sig} : undef;
+    if _CAN_USE_INFORMATIVE_NAMES && $OPTIONS{better_names};
 }
 
 sub unimport {
@@ -102,8 +109,19 @@ sub unimport {
     }
   }
 }
-END {
-  __PACKAGE__->unimport;
+
+sub _find_sig {
+  my $sig = $_[0];
+  return undef
+    if !defined $sig;
+  return $sig
+    if ref $sig && eval { \&{$sig} };
+  return undef
+    if $sig eq 'DEFAULT' || $sig eq 'IGNORE';
+  package #hide
+    main;
+  no strict 'refs';
+  defined &{$sig} ? \&{$sig} : undef;
 }
 
 sub _warn {
@@ -299,31 +317,44 @@ __END__
 
 =head1 NAME
 
-Devel::Confess - Warns and dies noisily with stack backtraces
+Devel::Confess - Include stack traces on all warnings and errors
 
 =head1 SYNOPSIS
 
-  use Devel::Confess;
+Use on the command line:
 
-makes every C<warn()> and C<die()> complains loudly in the calling package
-and elsewhere.  Works even when exception objects are thrown.  More often
-used on the command line:
-
+  # Make every warning and error include a full stack trace
   perl -MDevel::Confess script.pl
 
-or as shorthand:
-
+  # equivalent short form
   perl -d:Confess script.pl
+
+  # display warnings in yellow and errors in red
+  perl -d:Confess=color script.pl
+
+  # set options by environment
+  export DEVEL_CONFESS_OPTIONS='color dump'
+  perl -d:Confess script.pl
+
+Can also be used inside a script:
+
+  use Devel::Confess;
+
+  use Devel::Confess 'color';
+
+  # disable stack traces
+  no Devel::Confess;
 
 =head1 DESCRIPTION
 
-This module is meant as a debugging aid. It can be used to make a
-script complain loudly with stack backtraces when warn()ing or
-die()ing.  Unlike other similar modules (e.g. L<Carp::Always>), it
-includes stack traces even when exception objects are thrown.
+This module is meant as a debugging aid. It can be used to make a script
+complain loudly with stack backtraces when warn()ing or die()ing.  Unlike other
+similar modules (e.g. L<Carp::Always>), it includes stack traces even when
+exception objects are thrown.
 
-Here are how stack backtraces produced by this module
-looks:
+The stack traces are generated using L<Carp>, and will look work for all types
+of errors.  L<Carp>'s C<carp> and C<confess> functions will also be made to
+include stack traces.
 
   # it works for explicit die's and warn's
   $ perl -MDevel::Confess -e 'sub f { die "arghh" }; sub g { f }; g'
@@ -334,19 +365,12 @@ looks:
   # it works for interpreter-thrown failures
   $ perl -MDevel::Confess -w -e 'sub f { $a = shift; @a = @$a };' \
                                         -e 'sub g { f(undef) }; g'
-  Use of uninitialized value in array dereference at -e line 1.
-          main::f('undef') called at -e line 2
+  Use of uninitialized value $a in array dereference at -e line 1.
+          main::f(undef) called at -e line 2
           main::g() called at -e line 2
 
-In the implementation, the C<Carp> module does
-the heavy work, through C<longmess()>. The
-actual implementation sets the signal hooks
-C<$SIG{__WARN__}> and C<$SIG{__DIE__}> to
-emit the stack backtraces.
-
-Oh, by the way, C<carp> and C<croak> when requiring/using
-the C<Carp> module are also made verbose, behaving
-like C<cluck> and C<confess>, respectively.
+Internally, this is implemented with C<$SIG{__WARN__}> and C<$SIG{__DIE__}>
+hooks.
 
 Stack traces are also included if raw non-object references are thrown.
 
@@ -354,8 +378,8 @@ Stack traces are also included if raw non-object references are thrown.
 
 =head2 import( @options )
 
-Enables stack traces and sets options.  Options can be prefixed
-with no_ to disable them.
+Enables stack traces and sets options.  A list of options to enable can be
+passed in.  Prefixing the options with no_ will disable them.
 
 =over 4
 
@@ -382,6 +406,19 @@ Colorizes error messages in red and warnings in yellow.  Disabled by default.
 Includes a snippet of the source for each level of the stack trace. Disabled
 by default.
 
+=item C<better_names>
+
+Use more informative names to string evals and anonymous subs in stack
+traces.  Enabled by default.
+
+=item C<errors>
+
+Add stack traces to errors.  Enabled by default.
+
+=item C<warnings>
+
+Add stack traces to warnings.  Enabled by default.
+
 =back
 
 The default options can be changed by setting the C<DEVEL_CONFESS_OPTIONS>
@@ -394,7 +431,7 @@ environment variable to a space separated list of options.
 Classes or roles added to this hash will not have stack traces
 attached to them.  This is useful for exception classes that provide
 their own stack traces, or classes that don't cope well with being
-re-blessed.  If L<Devel::Confess::Buildin> is loaded, it will
+re-blessed.  If L<Devel::Confess::Builtin> is loaded, it will
 automatically add its supported exception types to this hash.
 
 Default Entries:
@@ -413,8 +450,7 @@ Provides a stack trace
 
 =head1 ACKNOWLEDGMENTS
 
-The idea, part of the code, and most of the documentation are taken
-from L<Carp::Always>.
+The idea and parts of the code and documentation are taken from L<Carp::Always>.
 
 =head1 SEE ALSO
 

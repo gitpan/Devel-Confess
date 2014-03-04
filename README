@@ -1,18 +1,30 @@
 NAME
-    Devel::Confess - Warns and dies noisily with stack backtraces
+    Devel::Confess - Include stack traces on all warnings and errors
 
 SYNOPSIS
-      use Devel::Confess;
+    Use on the command line:
 
-    makes every "warn()" and "die()" complains loudly in the calling package
-    and elsewhere. Works even when exception objects are thrown. More often
-    used on the command line:
-
+      # Make every warning and error include a full stack trace
       perl -MDevel::Confess script.pl
 
-    or as shorthand:
-
+      # equivalent short form
       perl -d:Confess script.pl
+
+      # display warnings in yellow and errors in red
+      perl -d:Confess=color script.pl
+
+      # set options by environment
+      export DEVEL_CONFESS_OPTIONS='color dump'
+      perl -d:Confess script.pl
+
+    Can also be used inside a script:
+
+      use Devel::Confess;
+
+      use Devel::Confess 'color';
+
+      # disable stack traces
+      no Devel::Confess;
 
 DESCRIPTION
     This module is meant as a debugging aid. It can be used to make a script
@@ -20,7 +32,9 @@ DESCRIPTION
     other similar modules (e.g. Carp::Always), it includes stack traces even
     when exception objects are thrown.
 
-    Here are how stack backtraces produced by this module looks:
+    The stack traces are generated using Carp, and will look work for all
+    types of errors. Carp's "carp" and "confess" functions will also be made
+    to include stack traces.
 
       # it works for explicit die's and warn's
       $ perl -MDevel::Confess -e 'sub f { die "arghh" }; sub g { f }; g'
@@ -31,24 +45,19 @@ DESCRIPTION
       # it works for interpreter-thrown failures
       $ perl -MDevel::Confess -w -e 'sub f { $a = shift; @a = @$a };' \
                                             -e 'sub g { f(undef) }; g'
-      Use of uninitialized value in array dereference at -e line 1.
-              main::f('undef') called at -e line 2
+      Use of uninitialized value $a in array dereference at -e line 1.
+              main::f(undef) called at -e line 2
               main::g() called at -e line 2
 
-    In the implementation, the "Carp" module does the heavy work, through
-    "longmess()". The actual implementation sets the signal hooks
-    $SIG{__WARN__} and $SIG{__DIE__} to emit the stack backtraces.
-
-    Oh, by the way, "carp" and "croak" when requiring/using the "Carp"
-    module are also made verbose, behaving like "cluck" and "confess",
-    respectively.
+    Internally, this is implemented with $SIG{__WARN__} and $SIG{__DIE__}
+    hooks.
 
     Stack traces are also included if raw non-object references are thrown.
 
 METHODS
   import( @options )
-    Enables stack traces and sets options. Options can be prefixed with no_
-    to disable them.
+    Enables stack traces and sets options. A list of options to enable can
+    be passed in. Prefixing the options with no_ will disable them.
 
     "objects"
         Enable attaching stack traces to exception objects. Enabled by
@@ -71,6 +80,16 @@ METHODS
         Includes a snippet of the source for each level of the stack trace.
         Disabled by default.
 
+    "better_names"
+        Use more informative names to string evals and anonymous subs in
+        stack traces. Enabled by default.
+
+    "errors"
+        Add stack traces to errors. Enabled by default.
+
+    "warnings"
+        Add stack traces to warnings. Enabled by default.
+
     The default options can be changed by setting the
     "DEVEL_CONFESS_OPTIONS" environment variable to a space separated list
     of options.
@@ -80,7 +99,7 @@ CONFIGURATION
     Classes or roles added to this hash will not have stack traces attached
     to them. This is useful for exception classes that provide their own
     stack traces, or classes that don't cope well with being re-blessed. If
-    Devel::Confess::Buildin is loaded, it will automatically add its
+    Devel::Confess::Builtin is loaded, it will automatically add its
     supported exception types to this hash.
 
     Default Entries:
@@ -92,7 +111,7 @@ CONFIGURATION
         Provides a stack trace
 
 ACKNOWLEDGMENTS
-    The idea, part of the code, and most of the documentation are taken from
+    The idea and parts of the code and documentation are taken from
     Carp::Always.
 
 SEE ALSO
