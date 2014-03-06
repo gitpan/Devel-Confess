@@ -4,12 +4,12 @@
       "haarg - Graham Knop (cpan:HAARG) <haarg@haarg.org>"
    ],
    "dynamic_config" : 0,
-   "generated_by" : "ExtUtils::MakeMaker version 6.9, CPAN::Meta::Converter version 2.133380",
+   "generated_by" : "ExtUtils::MakeMaker version 6.9, CPAN::Meta::Converter version 2.140630",
    "license" : [
       "perl_5"
    ],
    "meta-spec" : {
-      "url" : "http://search.cpan.org/perldoc?CPAN::Meta::Spec",
+      "url" : "https://metacpan.org/pod/CPAN::Meta::Spec",
       "version" : "2"
    },
    "name" : "Devel::Confess",
@@ -65,5 +65,5 @@
          "web" : "https://github.com/haarg/Devel-Confess"
       }
    },
-   "version" : "0.006000"
+   "version" : "0.006001"
 }
