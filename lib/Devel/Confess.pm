@@ -3,7 +3,7 @@ use 5.006;
 use strict;
 use warnings FATAL => 'all';
 
-our $VERSION = '0.006001';
+our $VERSION = '0.007000';
 $VERSION = eval $VERSION;
 
 use Carp ();
@@ -49,7 +49,14 @@ sub _parse_options {
       );
     } or warn $@;
   }
+  for my $opt (@opts) {
+    if ($opt->[1] =~ /^dump(\d*)$/) {
+      $opt->[1] = 'dump';
+      $opt->[2] = length $1 ? ($1 || 'inf') : 3;
+    }
+  }
   if (my @bad = grep { !exists $OPTIONS{$_->[1]} } @opts) {
+    local $SIG{__DIE__};
     Carp::croak("invalid options: " . join(', ', map { $_->[0] } @bad));
   }
   $OPTIONS{$_->[1]} = $_->[2]
@@ -77,17 +84,20 @@ sub import {
       Win32::Console::ANSI->import;
     }
     else {
+      local $SIG{__WARN__};
       Carp::carp("Devel::Confess color option requires Win32::Console::ANSI on Windows");
       $OPTIONS{color} = 0;
     }
   }
 
   if ($OPTIONS{errors} && !$OLD_SIG{__DIE__}) {
-    $OLD_SIG{__DIE__} = $SIG{__DIE__};
+    $OLD_SIG{__DIE__} = $SIG{__DIE__}
+      if $SIG{__DIE__} && $SIG{__DIE__} ne \&_die;
     $SIG{__DIE__} = \&_die;
   }
   if ($OPTIONS{warnings} && !$OLD_SIG{__WARN__}) {
-    $OLD_SIG{__WARN__} = $SIG{__WARN__};
+    $OLD_SIG{__WARN__} = $SIG{__WARN__}
+      if $SIG{__WARN__} && $SIG{__WARN__} ne \&_warn;
     $SIG{__WARN__} = \&_warn;
   }
 
@@ -135,6 +145,7 @@ sub _warn {
   }
 }
 sub _die {
+  local $SIG{__DIE__};
   my @convert = _convert(@_);
   if (my $sig = _find_sig($OLD_SIG{__DIE__})) {
     $sig->(@convert);
@@ -167,6 +178,8 @@ sub _ref_formatter {
   local $Data::Dumper::Indent = 0;
   local $Data::Dumper::Purity = 0;
   local $Data::Dumper::Terse = 1;
+  local $Data::Dumper::Useqq = 1;
+  local $Data::Dumper::Maxdepth = $OPTIONS{dump} eq 'inf' ? 0 : $OPTIONS{dump};
   Data::Dumper::Dumper($_[0]);
 }
 
@@ -190,13 +203,27 @@ sub CLONE {
 }
 
 sub _convert {
-  __PACKAGE__->CLONE;
+  CLONE;
   if (my $class = blessed(my $ex = $_[0])) {
     return @_
       unless $OPTIONS{objects};
+    my $message;
     my $id = refaddr($ex);
-    return @_
-      if $attached{$id};
+    if ($attached{$id}) {
+      return @_
+        if $ex->isa("Devel::Confess::_Attached");
+
+      # something is going very wrong.  possibly from a Safe compartment.
+      # we probably broke something, but do the best we can.
+      if ((ref $ex) =~ /^Devel::Confess::__ANON_/) {
+        (undef, my $oldclass, $message) = @{$attached{$id}};
+        bless $ex, $oldclass;
+      }
+      else {
+        # give up
+        return @_;
+      }
+    }
 
     my $does = $ex->can('does') || $ex->can('DOES') || sub () { 0 };
     if (
@@ -209,7 +236,7 @@ sub _convert {
       return @_;
     }
 
-    my $message = _stack_trace();
+    $message ||= _stack_trace();
 
     $attached{$id} = [ $ex, $class, $message ];
     weaken $attached{$id}[0];
@@ -395,7 +422,13 @@ stack traces on supported exception types.  Disabled by default.
 =item C<dump>
 
 Dumps the contents of references in arguments in stack trace, instead
-of only showing their stringified version.  Disabled by default.
+of only showing their stringified version.  Shows up to three references deep.
+Disabled by default.
+
+=item C<dump0>, C<dump1>, C<dump2>, etc
+
+The same as the dump option, but with a different max depth to dump.  A depth
+of 0 is treated as infinite.
 
 =item C<color>
 

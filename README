@@ -69,8 +69,12 @@ METHODS
 
     "dump"
         Dumps the contents of references in arguments in stack trace,
-        instead of only showing their stringified version. Disabled by
-        default.
+        instead of only showing their stringified version. Shows up to three
+        references deep. Disabled by default.
+
+    "dump0", "dump1", "dump2", etc
+        The same as the dump option, but with a different max depth to dump.
+        A depth of 0 is treated as infinite.
 
     "color"
         Colorizes error messages in red and warnings in yellow. Disabled by

@@ -12,6 +12,7 @@ t/devel.t
 t/dump.t
 t/leak.t
 t/lib/capture.pm
+t/safe.t
 t/sig.t
 t/source.t
 xt/builtin.t
