@@ -4,6 +4,8 @@ use Test::More tests => 3;
 use Safe;
 use Devel::Confess ();
 
+local $TODO = 'not working reliably with Safe in perl 5.6'
+  if $] < 5.008;
 {
   package Shared::Ex;
   use overload '""' => sub { $_[0]->{message} };
@@ -40,9 +42,5 @@ sub { sub {
 Devel::Confess->unimport;
 
 isa_ok $@, 'Shared::Ex';
-
-like "$@", qr{
-  \AShared::Ex=\S+\ at\ \S+\ line\ \d+\.[\r\n]+
-  [\t]Shared::Ex::foo\(.*?\)\ called\ at\ .*\ line\ \d+[\r\n]+
-  [\t]Shared::Ex::bar\(.*?\)\ called\ at\ .*\ line\ \d+[\r\n]+
-}x, 'works in Safe compartment with exception object';
+ok !$@->isa('Devel::Confess::_Attached'),
+  "didn't interfere with object inside Safe";
