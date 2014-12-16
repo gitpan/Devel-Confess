@@ -15,7 +15,7 @@ use 5.006;
 use strict;
 use warnings FATAL => 'all';
 
-our $VERSION = '0.007004';
+our $VERSION = '0.007005';
 $VERSION = eval $VERSION;
 
 use Carp ();
@@ -49,7 +49,7 @@ sub _parse_options {
       _parse_options(
         grep length, split /[\s,]+/, $ENV{DEVEL_CONFESS_OPTIONS}||''
       );
-    } or warn $@;
+    } or warn "DEVEL_CONFESS_OPTIONS: $@";
   }
   for my $opt (@opts) {
     if ($opt->[1] =~ /^dump(\d*)$/) {
@@ -140,7 +140,7 @@ sub _find_sig {
 sub _warn {
   my @convert = _convert(@_);
   if (my $warn = _find_sig($OLD_SIG{__WARN__})) {
-    $warn->(@convert);
+    $warn->(join('', @convert));
   }
   else {
     _colorize(\@convert, 33) if $OPTIONS{color};
@@ -151,7 +151,7 @@ sub _die {
   local $SIG{__DIE__};
   my @convert = _convert(@_);
   if (my $sig = _find_sig($OLD_SIG{__DIE__})) {
-    $sig->(@convert);
+    $sig->(join('', @convert));
   }
   _colorize(\@convert, 31) if $OPTIONS{color} && !$^S;
   die @convert;
@@ -412,7 +412,7 @@ Stack traces are also included if raw non-object references are thrown.
 =head2 import( @options )
 
 Enables stack traces and sets options.  A list of options to enable can be
-passed in.  Prefixing the options with no_ will disable them.
+passed in.  Prefixing the options with C<no_> will disable them.
 
 =over 4
 
@@ -544,11 +544,11 @@ C<$SIG{'__DIE__'}>.
 
 =item *
 
-Graham Knop, E<lt>haarg@haarg.orgE<gt>
+Graham Knop <haarg@haarg.org>
 
 =item *
 
-Adriano Ferreira, E<lt>ferreira@cpan.orgE<gt>
+Adriano Ferreira <ferreira@cpan.org>
 
 =back
 
