@@ -15,7 +15,7 @@ use 5.006;
 use strict;
 use warnings FATAL => 'all';
 
-our $VERSION = '0.007005';
+our $VERSION = '0.007006';
 $VERSION = eval $VERSION;
 
 use Carp ();
@@ -334,9 +334,9 @@ sub _ex_as_strings {
     my ($ex, $class) = Devel::Confess::_delete_ex_info(@_);
     my $newclass = ref $ex;
 
-    Symbol::delete_package($newclass);
-
     bless $ex, $class;
+
+    Symbol::delete_package($newclass);
 
     # after reblessing, perl will re-dispatch to the class's own DESTROY.
     ();

@@ -1,12 +1,21 @@
 use strict;
 use warnings;
-use Test::More tests => 10;
-my $tm_die; BEGIN { $tm_die = $SIG{__DIE__} }
+use Test::More tests => 11;
 use t::lib::capture;
+
+# preload to make sure we only test the effect of our own import
+use base ();
+use Exporter ();
+use Carp ();
+use Carp::Heavy ();
+use Symbol ();
+
+my $pre_die;
+BEGIN { $pre_die = $SIG{__DIE__} }
 
 use Devel::Confess ();
 
-is $SIG{__DIE__}, $tm_die, 'not activated without import';
+is $SIG{__DIE__}, $pre_die, 'not activated without import';
 my $called;
 sub CALLED { $called++ };
 $SIG{__DIE__} = \&CALLED;
@@ -95,3 +104,28 @@ package main;
 #line 3 test-block.pl
 A::g();
 END_CODE
+
+is capture <<'END_CODE', <<'END_OUTPUT', 'outer __WARN__ gets full location';
+BEGIN { $SIG{__WARN__} = sub { warn $_[0] } }
+use Devel::Confess;
+package A;
+
+sub f {
+#line 1 test-block.pl
+    warn "Beware!";
+}
+
+sub g {
+#line 2 test-block.pl
+    f();
+}
+
+package main;
+
+#line 3 test-block.pl
+A::g();
+END_CODE
+Beware! at test-block.pl line 1.
+	A::f() called at test-block.pl line 2
+	A::g() called at test-block.pl line 3
+END_OUTPUT
